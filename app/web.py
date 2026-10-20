@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import secrets
+import logging
+import os
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, session
@@ -12,7 +14,32 @@ from .router import build_context, route_query
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.config.update(SECRET_KEY=SECRET_KEY, MAX_CONTENT_LENGTH=MAX_UPLOAD_BYTES)
+app.logger.setLevel(logging.INFO)
 generator = Generator()
+LOG_REQUESTS = os.getenv("LOG_REQUESTS", "0") == "1"
+LOG_RESPONSE_BODY = os.getenv("LOG_RESPONSE_BODY", "0") == "1"
+
+@app.before_request
+def log_incoming_request():
+    if not LOG_REQUESTS:
+        return
+    details = ""
+    if request.is_json:
+        payload = request.get_json(silent=True) or {}
+        if "query" in payload:
+            details = f" query={payload['query']!r}"
+    elif request.files:
+        details = f" files={[file.filename for file in request.files.getlist('files')]!r}"
+    app.logger.info("IN  %s %s%s", request.method, request.path, details)
+
+@app.after_request
+def log_outgoing_response(response):
+    if LOG_REQUESTS:
+        body = ""
+        if LOG_RESPONSE_BODY:
+            body = f" body={response.get_data(as_text=True)[:2000]!r}"
+        app.logger.info("OUT %s %s status=%s%s", request.method, request.path, response.status_code, body)
+    return response
 
 def csrf_token() -> str:
     session.setdefault("csrf_token", secrets.token_urlsafe(24))

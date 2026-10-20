@@ -97,20 +97,21 @@ import requests
 print(requests.get("http://127.0.0.1:11434/api/tags", timeout=30).json())
 ```
 
-### 4. Configure and start the Flask app locally
+### 4. Start Flask, expose it with ngrok, and stream live traffic
 
-Because Ollama runs inside the same Kaggle session, the expected endpoint is:
-
-```text
-http://127.0.0.1:11434
-```
-
-Start Flask on all interfaces so ngrok can reach it:
+This single Kaggle cell starts the Flask app, opens the ngrok tunnel, prints the public URL, and then stays running. It continuously displays incoming requests and outgoing responses. Leave this cell running while using the public URL in your browser.
 
 ```python
 import os
+import queue
 import subprocess
 import sys
+import threading
+import time
+
+import requests
+from kaggle_secrets import UserSecretsClient
+from pyngrok import ngrok
 
 repo = "/kaggle/working/multilingual-rag"
 env = os.environ.copy()
@@ -120,47 +121,81 @@ env.update({
     "OLLAMA_BASE_URL": "http://127.0.0.1:11434",
     "OLLAMA_MODEL": "qwen2.5:14b",
     "EMBEDDING_MODEL": "intfloat/multilingual-e5-large",
+    "LOG_REQUESTS": "1",
+    "LOG_RESPONSE_BODY": "1",
+    "PYTHONUNBUFFERED": "1",
 })
 
-app_log = open("/kaggle/working/rag-app.log", "w")
-app_process = subprocess.Popen(
-    [sys.executable, "-m", "app.web"],
-    cwd=repo,
-    env=env,
-    stdout=app_log,
-    stderr=subprocess.STDOUT,
-)
-print("RAG PID:", app_process.pid)
-```
-
-Check the local health endpoint:
-
-```python
-import requests
-print(requests.get("http://127.0.0.1:5000/health", timeout=30).json())
-```
-
-Expected:
-
-```text
-{'ok': True, 'documents': 0}
-```
-
-### 5. Expose only Flask through ngrok
-
-Add an `NGROK_AUTHTOKEN` secret through Kaggle **Add-ons → Secrets**, then run:
-
-```python
-from kaggle_secrets import UserSecretsClient
-from pyngrok import ngrok
-
+# Get the ngrok token from Kaggle Add-ons -> Secrets.
 secrets = UserSecretsClient()
 ngrok_token = secrets.get_secret("NGROK_AUTHTOKEN")
 ngrok.set_auth_token(ngrok_token)
 
+log_queue = queue.Queue()
+app_process = subprocess.Popen(
+    [sys.executable, "-m", "app.web"],
+    cwd=repo,
+    env=env,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.STDOUT,
+    text=True,
+    bufsize=1,
+)
+
+def forward_logs():
+    assert app_process.stdout is not None
+    for line in iter(app_process.stdout.readline, ""):
+        log_queue.put(line.rstrip())
+
+threading.Thread(target=forward_logs, daemon=True).start()
+
+# Wait until Flask is ready before opening ngrok.
+for _ in range(60):
+    try:
+        health = requests.get("http://127.0.0.1:5000/health", timeout=2)
+        if health.ok:
+            break
+    except requests.RequestException:
+        time.sleep(1)
+else:
+    raise RuntimeError("Flask did not become ready; inspect the app process output")
+
 tunnel = ngrok.connect(5000, "http")
-print("Public app URL:", tunnel.public_url)
-print("Chat URL:", tunnel.public_url + "/chat")
+print("Public app URL:", tunnel.public_url, flush=True)
+print("Chat URL:", tunnel.public_url + "/chat", flush=True)
+print("Live traffic monitor started. Open the URL in your browser.", flush=True)
+print("Press the notebook interrupt button to stop Flask and ngrok.", flush=True)
+
+try:
+    last_heartbeat = time.time()
+    while True:
+        try:
+            line = log_queue.get(timeout=5)
+            print(line, flush=True)
+        except queue.Empty:
+            if app_process.poll() is not None:
+                print(f"[monitor] Flask exited with code {app_process.returncode}", flush=True)
+                break
+            if time.time() - last_heartbeat >= 30:
+                print("[monitor] Flask/ngrok still running; waiting for traffic...", flush=True)
+                last_heartbeat = time.time()
+except KeyboardInterrupt:
+    print("Stopping Flask and ngrok...", flush=True)
+    app_process.terminate()
+    ngrok.kill()
+```
+
+The log output includes entries like:
+
+```text
+IN  POST /api/chat query='enakku refund eppo varum?'
+OUT POST /api/chat status=200 body='{"answer": ...}'
+```
+
+`LOG_RESPONSE_BODY=1` prints response previews, including answer text and potentially retrieved document content. For safer monitoring that shows requests and status codes without response content, change it to:
+
+```python
+"LOG_RESPONSE_BODY": "0",
 ```
 
 Only the Flask application needs an ngrok tunnel. Ollama stays private inside Kaggle at `http://127.0.0.1:11434`.
@@ -171,7 +206,7 @@ The resulting network layout is:
 Browser -> ngrok -> Kaggle Flask app -> local Ollama -> Kaggle GPU
 ```
 
-### 6. Upload documents and use chat
+### 5. Upload documents and use chat
 
 Open the printed ngrok URL, upload PDF/DOCX/TXT documents, and use the Chat page. To ingest documents from a notebook cell instead:
 
