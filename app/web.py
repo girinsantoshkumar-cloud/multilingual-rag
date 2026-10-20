@@ -3,6 +3,8 @@ from __future__ import annotations
 import secrets
 import logging
 import os
+import threading
+import uuid
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, session
@@ -18,6 +20,8 @@ app.logger.setLevel(logging.INFO)
 generator = Generator()
 LOG_REQUESTS = os.getenv("LOG_REQUESTS", "0") == "1"
 LOG_RESPONSE_BODY = os.getenv("LOG_RESPONSE_BODY", "0") == "1"
+UPLOAD_JOBS: dict[str, dict] = {}
+UPLOAD_JOBS_LOCK = threading.Lock()
 
 @app.before_request
 def log_incoming_request():
@@ -48,6 +52,26 @@ def csrf_token() -> str:
 def check_csrf() -> bool:
     return secrets.compare_digest(request.form.get("csrf_token", request.headers.get("X-CSRF-Token", "")), session.get("csrf_token", ""))
 
+def _update_upload_job(job_id: str, **updates) -> None:
+    with UPLOAD_JOBS_LOCK:
+        UPLOAD_JOBS[job_id].update(updates)
+
+def _run_upload_job(job_id: str, files: list[tuple[Path, str]]) -> None:
+    indexed, errors = [], []
+    total = len(files)
+    for index, (path, original_name) in enumerate(files):
+        def progress(stage: str, percent: int, index: int = index) -> None:
+            overall = int(((index + (percent / 100)) / total) * 100)
+            _update_upload_job(job_id, progress=overall, stage=f"{stage} · file {index + 1} of {total}")
+
+        try:
+            indexed.append(ingest_file(path, original_name, progress_callback=progress))
+        except Exception as exc:
+            errors.append({"filename": original_name, "error": str(exc)})
+        finally:
+            path.unlink(missing_ok=True)
+    _update_upload_job(job_id, progress=100, stage="Completed", status="complete", indexed=indexed, errors=errors)
+
 @app.context_processor
 def inject_csrf():
     return {"csrf_token": csrf_token()}
@@ -71,7 +95,7 @@ def upload():
     files = request.files.getlist("files")
     if not files:
         return jsonify({"error": "Select at least one file"}), 400
-    results, errors = [], []
+    staged_files = []
     for uploaded in files:
         if not uploaded.filename:
             continue
@@ -79,14 +103,22 @@ def upload():
         temp.mkdir(parents=True, exist_ok=True)
         path = temp / secrets.token_hex(12)
         uploaded.save(path)
-        try:
-            results.append(ingest_file(path, uploaded.filename))
-        except Exception as exc:
-            errors.append({"filename": uploaded.filename, "error": str(exc)})
-        finally:
-            path.unlink(missing_ok=True)
-    status = 207 if errors and results else (400 if errors else 200)
-    return jsonify({"indexed": results, "errors": errors}), status
+        staged_files.append((path, uploaded.filename))
+    if not staged_files:
+        return jsonify({"error": "Select at least one file"}), 400
+    job_id = uuid.uuid4().hex
+    with UPLOAD_JOBS_LOCK:
+        UPLOAD_JOBS[job_id] = {"job_id": job_id, "status": "running", "progress": 0, "stage": "Starting", "indexed": [], "errors": []}
+    threading.Thread(target=_run_upload_job, args=(job_id, staged_files), daemon=True).start()
+    return jsonify({"job_id": job_id}), 202
+
+@app.get("/api/upload/status/<job_id>")
+def upload_status(job_id: str):
+    with UPLOAD_JOBS_LOCK:
+        job = UPLOAD_JOBS.get(job_id)
+    if not job:
+        return jsonify({"error": "Upload job not found"}), 404
+    return jsonify(job)
 
 @app.post("/api/chat")
 def chat():

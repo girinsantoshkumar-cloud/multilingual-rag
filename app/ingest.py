@@ -6,6 +6,7 @@ import mimetypes
 import re
 import shutil
 from pathlib import Path
+from typing import Callable
 
 import numpy as np
 
@@ -62,7 +63,11 @@ def _validate_signature(path: Path, extension: str | None = None) -> None:
     if ext == ".docx" and not header.startswith(b"PK"):
         raise ValueError("File signature does not match DOCX")
 
-def ingest_file(source: str | Path, original_name: str | None = None) -> dict:
+def ingest_file(source: str | Path, original_name: str | None = None, progress_callback: Callable[[str, int], None] | None = None) -> dict:
+    def report(stage: str, percent: int) -> None:
+        if progress_callback:
+            progress_callback(stage, percent)
+
     source = Path(source)
     original_name = original_name or source.name
     filename = safe_filename(original_name)
@@ -71,12 +76,16 @@ def ingest_file(source: str | Path, original_name: str | None = None) -> dict:
     _validate_signature(source, Path(filename).suffix)
     stored = RAW_DIR / filename
     shutil.copyfile(source, stored) if source.resolve() != stored.resolve() else None
+    report("Saving document", 10)
     text = extract_text(stored)
+    report("Extracting text", 25)
     chunks = chunk_text(text)
+    report("Chunking passages", 40)
     if not chunks:
         raise ValueError("No readable text found in document")
     embedder = Embedder()
     vectors = embedder.encode(chunks, is_query=False)
+    report("Embedding passages", 80)
     store = _load_store()
     store["items"] = [item for item in store["items"] if item["filename"] != filename]
     for idx, (chunk, vector) in enumerate(zip(chunks, vectors)):
@@ -85,6 +94,7 @@ def ingest_file(source: str | Path, original_name: str | None = None) -> dict:
     store["dimension"] = embedder.dimension
     _save_store(store)
     (CHUNKS_DIR / f"{Path(filename).stem}.json").write_text(json.dumps({"filename": filename, "chunks": chunks}, ensure_ascii=False, indent=2), encoding="utf-8")
+    report("Indexed successfully", 100)
     return {"filename": filename, "chunks": len(chunks), "embedding_model": embedder.name}
 
 def ingest_path(path: str | Path) -> list[dict]:

@@ -2,11 +2,28 @@
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Upload documents</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head>
 <body>
-<main class="shell"><nav aria-label="Primary"><a class="active" href="/">Upload</a><a href="/chat">Chat</a></nav>
-<section class="card"><h1>Upload documents</h1><p class="muted">Add PDF, DOCX, or TXT files to the local knowledge index.</p>
-<form id="uploadForm"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><label for="fileInput">Documents</label><input id="fileInput" name="files" type="file" multiple accept=".pdf,.txt,.docx" aria-describedby="fileHelp"><small id="fileHelp">Maximum size: 25 MB per request.</small><button type="submit">Upload documents</button></form><p id="status" role="status" aria-live="polite"></p></section>
-<section class="card"><h2>Indexed files</h2><ul id="documents">{% for document in documents %}<li><span>{{ document.filename }}</span><span class="pill">{{ document.chunks }} chunks</span></li>{% else %}<li class="muted">No documents indexed yet.</li>{% endfor %}</ul></section></main>
+<main class="site-shell">
+  <nav class="top-nav" aria-label="Primary navigation"><span class="nav-mark" aria-hidden="true">RAG</span><div class="nav-links"><a class="active" href="/">Upload</a><a href="/chat">Chat</a></div></nav>
+  <header class="page-heading"><p class="eyebrow">Knowledge base</p><h1>Upload your documents</h1><p class="subtitle">Add reference material and watch it move from extraction to searchable knowledge.</p></header>
+  <section class="panel upload-panel" aria-labelledby="upload-title">
+    <div class="panel-heading"><div><h2 id="upload-title">Add files</h2><p class="muted">PDF, DOCX, and TXT files up to 25 MB.</p></div><span class="step-badge">01 / 02</span></div>
+    <form id="uploadForm">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="drop-zone" for="fileInput"><span class="drop-icon" aria-hidden="true">↑</span><strong>Choose documents</strong><span id="fileName" class="muted">or drag and drop them here</span><input id="fileInput" name="files" type="file" multiple accept=".pdf,.txt,.docx" aria-describedby="fileHelp"></label>
+      <small id="fileHelp" class="helper">Your files stay in the local knowledge store.</small>
+      <button id="uploadBtn" class="primary-button" type="submit">Start indexing <span aria-hidden="true">→</span></button>
+    </form>
+    <div id="progressWrap" class="progress-wrap" hidden>
+      <div class="progress-head"><span id="progressStage">Preparing upload…</span><strong id="progressPercent">0%</strong></div>
+      <progress id="progressBar" max="100" value="0" aria-label="Document indexing progress">0%</progress>
+      <p id="status" class="status-line" role="status" aria-live="polite">Preparing files…</p>
+    </div>
+  </section>
+  <section class="panel library-panel" aria-labelledby="library-title"><div class="panel-heading"><div><p class="eyebrow">Your library</p><h2 id="library-title">Indexed files</h2></div><span class="file-count">{{ documents|length }} file{% if documents|length != 1 %}s{% endif %}</span></div><ul id="documents" class="document-list">{% for document in documents %}<li><span class="file-name"><span class="file-type" aria-hidden="true">DOC</span>{{ document.filename }}</span><span class="pill">{{ document.chunks }} chunks</span></li>{% else %}<li class="empty-state">No documents indexed yet.</li>{% endfor %}</ul></section>
+</main>
 <script>
-const form=document.querySelector('#uploadForm'), status=document.querySelector('#status');
-form.addEventListener('submit',async e=>{e.preventDefault(); const files=document.querySelector('#fileInput').files; if(!files.length){status.textContent='Choose at least one file.';return;} status.textContent='Indexing…'; const r=await fetch('/api/upload',{method:'POST',body:new FormData(form)}); const d=await r.json(); status.textContent=r.ok?`Indexed ${d.indexed.length} file(s). Reloading…`:`Upload failed: ${d.error||d.errors?.map(x=>x.error).join(', ')}`; if(r.ok||r.status===207)setTimeout(()=>location.reload(),500);});
+const form=document.querySelector('#uploadForm'), input=document.querySelector('#fileInput'), fileName=document.querySelector('#fileName'), wrap=document.querySelector('#progressWrap'), bar=document.querySelector('#progressBar'), stage=document.querySelector('#progressStage'), percent=document.querySelector('#progressPercent'), status=document.querySelector('#status'), button=document.querySelector('#uploadBtn');
+input.addEventListener('change',()=>{const count=input.files.length;fileName.textContent=count?`${count} document${count===1?'':'s'} selected`:'or drag and drop them here';});
+async function pollJob(jobId){const response=await fetch(`/api/upload/status/${jobId}`);const job=await response.json();if(!response.ok)throw new Error(job.error||'Could not read indexing status');bar.value=job.progress||0;percent.textContent=`${job.progress||0}%`;stage.textContent=job.stage||'Indexing…';status.textContent=job.status==='complete'?(job.errors?.length?`Finished with ${job.errors.length} error(s).`:'All documents are searchable.'):'Working through your files…';if(job.status==='complete'){button.disabled=false;button.innerHTML='Index more documents <span aria-hidden="true">→</span>';if(job.errors?.length){status.textContent=job.errors.map(e=>`${e.filename}: ${e.error}`).join(' · ');}if(!job.errors?.length||job.indexed?.length)setTimeout(()=>location.reload(),900);return;}setTimeout(()=>pollJob(jobId),450);}
+form.addEventListener('submit',async e=>{e.preventDefault();if(!input.files.length){status.textContent='Choose at least one document first.';wrap.hidden=false;return;}button.disabled=true;button.textContent='Indexing…';wrap.hidden=false;bar.value=0;percent.textContent='0%';stage.textContent='Uploading files…';status.textContent='Starting ingestion…';try{const response=await fetch('/api/upload',{method:'POST',body:new FormData(form)});const data=await response.json();if(!response.ok)throw new Error(data.error||'Upload failed');pollJob(data.job_id);}catch(error){status.textContent=error.message;button.disabled=false;button.innerHTML='Try again <span aria-hidden="true">↻</span>';}});
 </script></body></html>

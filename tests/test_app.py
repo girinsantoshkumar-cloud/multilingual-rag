@@ -1,5 +1,6 @@
 from io import BytesIO
 from pathlib import Path
+import time
 
 import pytest
 
@@ -49,4 +50,12 @@ def test_web_health_and_chat(tmp_path, monkeypatch):
     with client.session_transaction() as sess:
         token = sess['csrf_token']
     response = client.post('/api/upload', data={'csrf_token': token, 'files': (BytesIO(b'Refunds take five business days.'), 'doc.txt')}, content_type='multipart/form-data')
-    assert response.status_code in (200, 207, 400)
+    assert response.status_code == 202
+    job_id = response.get_json()['job_id']
+    for _ in range(50):
+        job = client.get(f'/api/upload/status/{job_id}').get_json()
+        if job['status'] == 'complete':
+            break
+        time.sleep(0.02)
+    assert job['status'] == 'complete'
+    assert job['indexed']
