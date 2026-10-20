@@ -14,7 +14,7 @@ from flask import Flask, jsonify, render_template, request, send_from_directory,
 from .config import MAX_UPLOAD_BYTES, SECRET_KEY, DATA_DIR
 from .ingest import ingest_file, list_documents
 from .models import Generator
-from .router import build_context, route_query
+from .router import build_context, retrieval_decision, route_query
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.config.update(SECRET_KEY=SECRET_KEY, MAX_CONTENT_LENGTH=MAX_UPLOAD_BYTES)
@@ -179,8 +179,12 @@ def chat():
         conversation = _conversation(conversation_id)
     history = [message for message in conversation.get("messages", []) if message.get("role") in ("user", "assistant")][-MAX_HISTORY_MESSAGES:]
     try:
-        retrieval_query = "\n".join(f"{message['role']}: {message['content']}" for message in history[-6:] + [{"role": "user", "content": query}])
-        routed = route_query(query, retrieval_query=retrieval_query)
+        decision = retrieval_decision(query, history)
+        if decision["retrieve"]:
+            retrieval_query = "\n".join(f"{message['role']}: {message['content']}" for message in history[-6:] + [{"role": "user", "content": query}])
+            routed = route_query(query, retrieval_query=retrieval_query)
+        else:
+            routed = {"query": query, "cmi": 0.0, "matrix_language": "en", "views": [], "results": []}
         context = build_context(routed["results"])
         answer = generator.answer(query, context, routed["matrix_language"], routed["cmi"], history=history, citations=routed["results"])
         citations = [{"filename": result["filename"], "chunk_id": result["chunk_id"], "score": result.get("score")} for result in routed["results"]]
@@ -189,7 +193,7 @@ def chat():
             if "Sources:" not in answer:
                 answer = f"{answer.rstrip()}\n\n{citation_text}"
         _append_messages(conversation_id, [{"role": "user", "content": query}, {"role": "assistant", "content": answer, "citations": citations}])
-        return jsonify({**routed, "answer": answer, "conversation_id": conversation_id, "history": _conversation(conversation_id)["messages"], "citations": citations})
+        return jsonify({**routed, "answer": answer, "conversation_id": conversation_id, "history": _conversation(conversation_id)["messages"], "citations": citations, "retrieval": decision})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 

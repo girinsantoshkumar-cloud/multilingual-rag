@@ -52,7 +52,9 @@ class Generator:
 
     def answer(self, query: str, context: str, matrix_language: str, cmi: float, history: Sequence[dict] | None = None, citations: Sequence[dict] | None = None) -> str:
         history_text = "\n".join(f"{message.get('role', 'user').title()}: {message.get('content', '')}" for message in (history or [])[-12:])
-        citation_instruction = "Cite supporting passages inline using the exact format [filename · chunk N]. End with a Sources line containing every source used. Do not invent filenames or chunks."
+        citation_instruction = ("Cite supporting passages inline using the exact format [filename · chunk N]. End with a Sources line containing every source used. Do not invent filenames or chunks."
+                                if context and citations else
+                                "This is a conversation-memory or casual turn. Do not cite, mention, or invent uploaded documents or sources.")
         prompt = ("Answer only from the supplied context when discussing indexed documents. Use the conversation history for personal facts and follow-up references. "
                   "Mirror the user's language mix and be concise. "
                   f"Matrix language: {matrix_language}; CMI: {cmi:.2f}. {citation_instruction}\n\n"
@@ -81,6 +83,14 @@ class Generator:
         except Exception:
             # The app remains usable when Ollama is stopped or the model is not pulled.
             pass
+        lowered = query.lower()
+        for message in reversed(history or []):
+            content = str(message.get("content", ""))
+            match = re.search(r"\bmy name is ([A-Za-z][A-Za-z .'-]{0,60})", content, re.IGNORECASE)
+            if match and ("name" in lowered or "who am i" in lowered):
+                return f"Your name is {match.group(1).strip().rstrip('.!?')} .".replace(" .", ".")
+        if not context and (lowered in {"hi", "hello", "hey", "thanks", "thank you"}):
+            return "Hello. How can I help you?" if lowered not in {"thanks", "thank you"} else "You're welcome."
         passages = [p.strip() for p in context.split("\n\n") if p.strip()]
         if not passages:
             return "I could not find supporting information in the indexed documents."

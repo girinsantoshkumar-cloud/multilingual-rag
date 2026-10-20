@@ -5,7 +5,7 @@ import time
 import pytest
 
 from app.ingest import chunk_text
-from app.router import query_views
+from app.router import query_views, retrieval_decision
 from app.utils import compute_cmi, language_profile, safe_filename, transliterate_roman_hindi, transliterate_roman_tamil
 
 
@@ -37,6 +37,18 @@ def test_roman_tamil_gets_native_script_view():
     assert 'எனக்கு' in transliterate_roman_tamil(query)
     views = query_views(query, 'ta', compute_cmi(query))
     assert any(name == 'native-script' and 'எனக்கு' in text for name, text in views)
+
+def test_retrieval_gate_skips_personal_and_casual_turns():
+    assert retrieval_decision('My name is John, remember it')['retrieve'] is False
+    assert retrieval_decision('What is my name?')['retrieve'] is False
+    assert retrieval_decision('hello')['retrieve'] is False
+
+def test_retrieval_gate_handles_documents_and_followups():
+    assert retrieval_decision('What is the refund policy?')['retrieve'] is True
+    history = [{'role': 'assistant', 'content': 'The policy says five days.', 'citations': [{'filename': 'policy.pdf', 'chunk_id': 1}]}]
+    decision = retrieval_decision('What about international customers?', history)
+    assert decision['retrieve'] is True
+    assert decision['mode'] == 'document-follow-up'
 
 def test_web_health_and_chat(tmp_path, monkeypatch):
     from app.web import app

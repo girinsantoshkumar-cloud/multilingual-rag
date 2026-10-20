@@ -270,6 +270,8 @@ Grounded answers include source references in the response using this format:
 
 The Chat UI also renders source chips directly below each assistant response, showing the filename and chunk used for retrieval. The backend response includes a `citations` array for clients that want to render their own citation interface.
 
+The chat now uses a retrieval gate before running embeddings and vector search. Greetings, personal-memory turns, and casual conversation skip retrieval and return no document citations. Document questions and follow-ups to a cited document answer retrieve normally. Retrieved chunks must also pass `RETRIEVAL_MIN_SCORE` before they are used as context or shown as citations. The response metadata reports whether the turn used `conversation-memory`, `conversation`, `document-rag`, or `document-follow-up` mode.
+
 Conversation storage is local to the current Kaggle session. Kaggle session termination removes the runtime files unless you copy `data/conversations.json` to persistent storage.
 
 ## Configuration
@@ -283,6 +285,7 @@ Conversation storage is local to the current Kaggle session. Kaggle session term
 | `HOST` | `127.0.0.1` | Flask bind address; use `0.0.0.0` for ngrok |
 | `PORT` | `5000` | Flask port |
 | `TOP_K` | `5` | Retrieved chunks |
+| `RETRIEVAL_MIN_SCORE` | `0.35` | Minimum cosine score for a chunk to become usable context/citation |
 | `CMI_THRESHOLD` | `0.20` | Mixed-query routing threshold |
 | `MAX_UPLOAD_BYTES` | `26214400` | Maximum upload request size |
 
