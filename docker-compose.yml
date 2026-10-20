@@ -12,9 +12,9 @@ services:
       MAX_UPLOAD_BYTES: "${MAX_UPLOAD_BYTES:-26214400}"
       TOP_K: "${TOP_K:-5}"
       CMI_THRESHOLD: "${CMI_THRESHOLD:-0.20}"
-      EMBEDDING_MODEL: "${EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}"
+      EMBEDDING_MODEL: "${EMBEDDING_MODEL:-intfloat/multilingual-e5-large}"
       OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
-      OLLAMA_MODEL: "${OLLAMA_MODEL:-qwen2.5:7b}"
+      OLLAMA_MODEL: "${OLLAMA_MODEL:-qwen2.5:14b}"
       OLLAMA_TIMEOUT: "${OLLAMA_TIMEOUT:-120}"
     volumes:
       - ./data:/app/data

@@ -15,6 +15,7 @@ class Embedder:
     def __init__(self):
         self.model = None
         self.name = "hashing-fallback"
+        self.is_e5 = "e5" in EMBEDDING_MODEL.lower()
         try:
             from sentence_transformers import SentenceTransformer
             self.model = SentenceTransformer(EMBEDDING_MODEL)
@@ -26,9 +27,13 @@ class Embedder:
     def dimension(self) -> int:
         return int(self.model.get_sentence_embedding_dimension()) if self.model else 384
 
-    def encode(self, texts: Sequence[str]) -> np.ndarray:
+    def encode(self, texts: Sequence[str], is_query: bool = False) -> np.ndarray:
         if self.model:
-            return np.asarray(self.model.encode(list(texts), normalize_embeddings=True, show_progress_bar=False), dtype="float32")
+            prepared = list(texts)
+            if self.is_e5:
+                prefix = "query: " if is_query else "passage: "
+                prepared = [prefix + text for text in prepared]
+            return np.asarray(self.model.encode(prepared, normalize_embeddings=True, show_progress_bar=False), dtype="float32")
         vectors = np.zeros((len(texts), self.dimension), dtype="float32")
         for row, text in enumerate(texts):
             for token in re.findall(r"\w+", text.lower()):

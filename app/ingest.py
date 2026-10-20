@@ -76,7 +76,7 @@ def ingest_file(source: str | Path, original_name: str | None = None) -> dict:
     if not chunks:
         raise ValueError("No readable text found in document")
     embedder = Embedder()
-    vectors = embedder.encode(chunks)
+    vectors = embedder.encode(chunks, is_query=False)
     store = _load_store()
     store["items"] = [item for item in store["items"] if item["filename"] != filename]
     for idx, (chunk, vector) in enumerate(zip(chunks, vectors)):

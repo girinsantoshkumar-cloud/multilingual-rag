@@ -26,7 +26,7 @@ def route_query(query: str, top_k: int = TOP_K) -> dict:
     profile = language_profile(query)
     views = query_views(query, profile["matrix_language"], cmi)
     embedder = Embedder()
-    embeddings = embedder.encode([text for _, text in views])
+    embeddings = embedder.encode([text for _, text in views], is_query=True)
     merged = {}
     for (view_name, _), vector in zip(views, embeddings):
         for result in search(vector.reshape(1, -1), top_k=top_k):

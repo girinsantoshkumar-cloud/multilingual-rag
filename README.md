@@ -90,7 +90,7 @@ Run the evaluation fixture and write CSV metrics:
 The application uses **Ollama**, not a proprietary hosted LLM API, for answer generation. No API key is required. The default model is:
 
 ```text
-qwen2.5:7b
+qwen2.5:14b
 ```
 
 Install Ollama on the Linux host, start its service, and pull the model:
@@ -98,7 +98,7 @@ Install Ollama on the Linux host, start its service, and pull the model:
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
 ollama serve
-ollama pull qwen2.5:7b
+ollama pull qwen2.5:14b
 ```
 
 For the native Linux launcher, the app expects Ollama at this host endpoint:
@@ -107,7 +107,7 @@ For the native Linux launcher, the app expects Ollama at this host endpoint:
 OLLAMA_BASE_URL=http://127.0.0.1:11434
 ```
 
-That is the default, so after `ollama serve` and `ollama pull qwen2.5:7b`, start the app normally:
+That is the default, so after `ollama serve` and `ollama pull qwen2.5:14b`, start the app normally:
 
 ```bash
 ./run_local.sh
@@ -116,7 +116,7 @@ That is the default, so after `ollama serve` and `ollama pull qwen2.5:7b`, start
 To select another model or endpoint:
 
 ```bash
-export OLLAMA_MODEL="qwen2.5:7b"
+export OLLAMA_MODEL="qwen2.5:14b"
 export OLLAMA_BASE_URL="http://127.0.0.1:11434"
 ./run_local.sh
 ```
@@ -137,7 +137,7 @@ The Compose file adds the Linux `host-gateway` mapping automatically. Start Olla
 
 ```bash
 ollama serve
-ollama pull qwen2.5:7b
+ollama pull qwen2.5:14b
 DOCKER_UID="$(id -u)" DOCKER_GID="$(id -g)" docker compose up --build
 ```
 
@@ -152,13 +152,21 @@ Useful configuration variables include:
 | `MAX_UPLOAD_BYTES` | `26214400` | Maximum request size |
 | `TOP_K` | `5` | Retrieved chunks |
 | `CMI_THRESHOLD` | `0.20` | Mixed-query routing threshold |
-| `EMBEDDING_MODEL` | `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` | Embedding model |
+| `EMBEDDING_MODEL` | `intfloat/multilingual-e5-large` | Embedding model |
 | `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` native / `http://host.docker.internal:11434` Compose | Ollama host endpoint |
-| `OLLAMA_MODEL` | `qwen2.5:7b` | Ollama generation model |
+| `OLLAMA_MODEL` | `qwen2.5:14b` | Ollama generation model |
 | `OLLAMA_TIMEOUT` | `120` | Ollama request timeout in seconds |
 | `SKIP_TESTS` | `0` | Set to `1` to skip startup tests |
 
-The first run may download the multilingual Sentence Transformer model. If the model cannot be downloaded, the app automatically uses a deterministic hashing embedder so the application and tests remain runnable offline.
+The first run may download the multilingual E5 embedding model. E5 receives `passage:` prefixes during indexing and `query:` prefixes during retrieval. If the model cannot be downloaded, the app automatically uses a deterministic hashing embedder so the application and tests remain runnable offline.
+
+The higher-quality defaults require more memory than the original lightweight setup. `qwen2.5:14b` is an Ollama quantized model, but it still needs substantially more VRAM/RAM than `qwen2.5:7b`. If the Kaggle GPU cannot load both models comfortably, use `OLLAMA_MODEL=qwen2.5:7b` or set `EMBEDDING_MODEL=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`.
+
+After changing `EMBEDDING_MODEL`, re-ingest your documents so the persisted vectors are created by the same model used for query embeddings:
+
+```bash
+.venv/bin/python -m app.ingest --input data/raw_docs/
+```
 
 ## Architecture
 
