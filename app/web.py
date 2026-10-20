@@ -7,7 +7,7 @@ import threading
 import uuid
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template, request, session
+from flask import Flask, jsonify, render_template, request, send_from_directory, session
 
 from .config import MAX_UPLOAD_BYTES, SECRET_KEY
 from .ingest import ingest_file, list_documents
@@ -18,6 +18,7 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 app.config.update(SECRET_KEY=SECRET_KEY, MAX_CONTENT_LENGTH=MAX_UPLOAD_BYTES)
 app.logger.setLevel(logging.INFO)
 generator = Generator()
+STYLE_VERSION = "20261020-1"
 LOG_REQUESTS = os.getenv("LOG_REQUESTS", "0") == "1"
 LOG_RESPONSE_BODY = os.getenv("LOG_RESPONSE_BODY", "0") == "1"
 UPLOAD_JOBS: dict[str, dict] = {}
@@ -74,7 +75,7 @@ def _run_upload_job(job_id: str, files: list[tuple[Path, str]]) -> None:
 
 @app.context_processor
 def inject_csrf():
-    return {"csrf_token": csrf_token()}
+    return {"csrf_token": csrf_token(), "style_version": STYLE_VERSION}
 
 @app.get("/")
 def upload_page():
@@ -83,6 +84,12 @@ def upload_page():
 @app.get("/chat")
 def chat_page():
     return render_template("chat.html")
+
+@app.get("/assets/style.css")
+def style_asset():
+    response = send_from_directory(app.static_folder, "style.css", max_age=0)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
 
 @app.get("/api/documents")
 def documents():
