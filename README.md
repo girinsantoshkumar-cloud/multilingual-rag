@@ -85,16 +85,63 @@ Run the evaluation fixture and write CSV metrics:
   --output results/metrics.csv
 ```
 
-## Optional LLM configuration
+## Ollama LLM configuration
 
-The application works without an external LLM by using a grounded extractive fallback. To use an OpenAI-compatible chat endpoint, export both the API key and endpoint before starting:
+The application uses **Ollama**, not a proprietary hosted LLM API, for answer generation. No API key is required. The default model is:
+
+```text
+qwen2.5:7b
+```
+
+Install Ollama on the Linux host, start its service, and pull the model:
 
 ```bash
-export OPENAI_API_KEY="your-key"
-export OPENAI_API_BASE="https://your-compatible-endpoint/v1"
-export OPENAI_MODEL="gpt-4o-mini"
+curl -fsSL https://ollama.com/install.sh | sh
+ollama serve
+ollama pull qwen2.5:7b
+```
+
+For the native Linux launcher, the app expects Ollama at this host endpoint:
+
+```text
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+```
+
+That is the default, so after `ollama serve` and `ollama pull qwen2.5:7b`, start the app normally:
+
+```bash
 ./run_local.sh
 ```
+
+To select another model or endpoint:
+
+```bash
+export OLLAMA_MODEL="qwen2.5:7b"
+export OLLAMA_BASE_URL="http://127.0.0.1:11434"
+./run_local.sh
+```
+
+The application calls Ollama's native chat endpoint:
+
+```text
+POST ${OLLAMA_BASE_URL}/api/chat
+```
+
+For Docker Compose, Ollama still runs on the Linux host and the container uses:
+
+```text
+OLLAMA_BASE_URL=http://host.docker.internal:11434
+```
+
+The Compose file adds the Linux `host-gateway` mapping automatically. Start Ollama and pull the model on the host first, then run:
+
+```bash
+ollama serve
+ollama pull qwen2.5:7b
+DOCKER_UID="$(id -u)" DOCKER_GID="$(id -g)" docker compose up --build
+```
+
+If Ollama is unavailable, the app uses its grounded extractive fallback instead of failing. `OLLAMA_TIMEOUT` controls the request timeout in seconds.
 
 Useful configuration variables include:
 
@@ -106,6 +153,9 @@ Useful configuration variables include:
 | `TOP_K` | `5` | Retrieved chunks |
 | `CMI_THRESHOLD` | `0.20` | Mixed-query routing threshold |
 | `EMBEDDING_MODEL` | `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` | Embedding model |
+| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` native / `http://host.docker.internal:11434` Compose | Ollama host endpoint |
+| `OLLAMA_MODEL` | `qwen2.5:7b` | Ollama generation model |
+| `OLLAMA_TIMEOUT` | `120` | Ollama request timeout in seconds |
 | `SKIP_TESTS` | `0` | Set to `1` to skip startup tests |
 
 The first run may download the multilingual Sentence Transformer model. If the model cannot be downloaded, the app automatically uses a deterministic hashing embedder so the application and tests remain runnable offline.
@@ -114,7 +164,7 @@ The first run may download the multilingual Sentence Transformer model. If the m
 
 - `app/ingest.py`: secure file handling, PDF/DOCX/TXT extraction, chunking, embeddings, and idempotent indexing.
 - `app/router.py`: CMI detection, matrix-language routing, transliteration/native-script views, retrieval fan-out, and result merging.
-- `app/models.py`: optional Sentence Transformer embeddings and OpenAI-compatible generation with an offline fallback.
+- `app/models.py`: optional Sentence Transformer embeddings and Ollama generation with an offline fallback.
 - `app/web.py`: Flask upload, document status, chat, and health endpoints.
 - `app/templates/` and `app/static/`: accessible white-and-blue web UI.
 - `evaluate.py`: retrieval, grounding, language-consistency, CMI, and transliteration metrics.

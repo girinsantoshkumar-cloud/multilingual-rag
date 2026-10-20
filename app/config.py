@@ -17,8 +17,9 @@ TOP_K = int(os.getenv("TOP_K", 5))
 CMI_THRESHOLD = float(os.getenv("CMI_THRESHOLD", 0.20))
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
 LLM_MODEL = os.getenv("LLM_MODEL", "")
-OPENAI_BASE_URL = os.getenv("OPENAI_API_BASE", "")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
+OLLAMA_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "120"))
 SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "dev-only-change-me")
 
 for directory in (RAW_DIR, CHUNKS_DIR, VECTOR_DIR, RESULTS_DIR):

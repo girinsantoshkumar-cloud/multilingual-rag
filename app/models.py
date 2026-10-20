@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
+import urllib.request
 from typing import Sequence
 
 import numpy as np
 
-from .config import EMBEDDING_MODEL, OPENAI_BASE_URL, OPENAI_MODEL
+from .config import EMBEDDING_MODEL, OLLAMA_BASE_URL, OLLAMA_MODEL, OLLAMA_TIMEOUT
 
 class Embedder:
     def __init__(self):
@@ -40,33 +42,36 @@ class Embedder:
 
 class Generator:
     def __init__(self):
-        self.client = None
-        self.model_name = "extractive-fallback"
-        if os.getenv("OPENAI_API_KEY") and OPENAI_BASE_URL:
-            try:
-                from openai import OpenAI
-                self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), base_url=OPENAI_BASE_URL)
-                self.model_name = OPENAI_MODEL
-            except Exception:
-                pass
+        self.ollama_base_url = OLLAMA_BASE_URL.rstrip("/")
+        self.model_name = OLLAMA_MODEL
 
     def answer(self, query: str, context: str, matrix_language: str, cmi: float) -> str:
-        if self.client:
-            try:
-                prompt = ("Answer only from the supplied context. Mirror the user's language mix and be concise. "
-                          f"Matrix language: {matrix_language}; CMI: {cmi:.2f}.\n\nContext:\n{context}\n\nQuestion: {query}")
-                response = self.client.chat.completions.create(
-                    model=self.model_name,
-                    messages=[{"role": "system", "content": "You are a grounded code-switching RAG assistant."}, {"role": "user", "content": prompt}],
-                    temperature=0.1,
-                    max_tokens=300,
-                )
-                content = response.choices[0].message.content if response.choices else None
-                if content:
-                    return content.strip()
-            except Exception:
-                # The app remains usable when an API endpoint is unavailable.
-                pass
+        prompt = ("Answer only from the supplied context. Mirror the user's language mix and be concise. "
+                  f"Matrix language: {matrix_language}; CMI: {cmi:.2f}.\n\nContext:\n{context}\n\nQuestion: {query}")
+        try:
+            payload = json.dumps({
+                "model": self.model_name,
+                "messages": [
+                    {"role": "system", "content": "You are a grounded multilingual code-switching RAG assistant."},
+                    {"role": "user", "content": prompt},
+                ],
+                "stream": False,
+                "options": {"temperature": 0.1},
+            }).encode("utf-8")
+            request = urllib.request.Request(
+                f"{self.ollama_base_url}/api/chat",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(request, timeout=OLLAMA_TIMEOUT) as response:
+                body = json.loads(response.read().decode("utf-8"))
+            content = body.get("message", {}).get("content")
+            if content:
+                return content.strip()
+        except Exception:
+            # The app remains usable when Ollama is stopped or the model is not pulled.
+            pass
         passages = [p.strip() for p in context.split("\n\n") if p.strip()]
         if not passages:
             return "I could not find supporting information in the indexed documents."
