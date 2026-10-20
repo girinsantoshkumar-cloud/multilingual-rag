@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+instance/
+data/raw_docs/*
+data/chunks/*
+data/vector_db/*
+!data/raw_docs/.gitkeep
+!data/chunks/.gitkeep
+!data/vector_db/.gitkeep
+results/*.csv

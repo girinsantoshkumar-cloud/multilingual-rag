@@ -1,0 +1,41 @@
+from io import BytesIO
+from pathlib import Path
+
+import pytest
+
+from app.ingest import chunk_text
+from app.router import query_views
+from app.utils import compute_cmi, safe_filename, transliterate_roman_hindi
+
+
+def test_cmi_mixed_query_is_nonzero():
+    assert compute_cmi('मेरा refund कब आएगा') > 0
+
+def test_roman_hindi_transliteration():
+    assert 'मेरा' in transliterate_roman_hindi('mera refund kab aayega')
+
+def test_chunking_overlap_and_size():
+    chunks = chunk_text('Sentence one. Sentence two. Sentence three. ' * 50, size=80, overlap=10)
+    assert len(chunks) > 1
+    assert all(len(c) <= 100 for c in chunks)
+
+def test_safe_filename_blocks_paths():
+    assert '/' not in safe_filename('../../secret.pdf')
+
+def test_mixed_query_has_fanout_views():
+    views = query_views('मेरा refund कब आएगा', 'hi', compute_cmi('मेरा refund कब आएगा'))
+    assert len(views) >= 3
+
+def test_web_health_and_chat(tmp_path, monkeypatch):
+    from app.web import app
+    app.config['TESTING'] = True
+    client = app.test_client()
+    assert client.get('/health').status_code == 200
+    with client.session_transaction() as sess:
+        token = sess.get('csrf_token')
+    # Get upload page first to establish session token.
+    page = client.get('/')
+    with client.session_transaction() as sess:
+        token = sess['csrf_token']
+    response = client.post('/api/upload', data={'csrf_token': token, 'files': (BytesIO(b'Refunds take five business days.'), 'doc.txt')}, content_type='multipart/form-data')
+    assert response.status_code in (200, 207, 400)

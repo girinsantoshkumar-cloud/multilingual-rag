@@ -1,0 +1,4 @@
+[
+  {"id":"refund-1","query":"mera refund kab aayega?","reference_answer":"Refund 5 business days mein aata hai."},
+  {"id":"policy-1","query":"What is the return policy?","reference_answer":"Items can be returned within 30 days."}
+]
