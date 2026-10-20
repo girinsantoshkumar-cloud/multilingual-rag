@@ -18,13 +18,14 @@ def query_views(query: str, matrix: str, cmi: float) -> list[tuple[str, str]]:
         views.append(("english-pivot", query))
     return views[:4]
 
-def route_query(query: str, top_k: int = TOP_K) -> dict:
+def route_query(query: str, top_k: int = TOP_K, retrieval_query: str | None = None) -> dict:
     query = query.strip()
     if not query:
         raise ValueError("Query cannot be empty")
+    retrieval_query = (retrieval_query or query).strip()
     cmi = compute_cmi(query)
     profile = language_profile(query)
-    views = query_views(query, profile["matrix_language"], cmi)
+    views = query_views(retrieval_query, profile["matrix_language"], compute_cmi(retrieval_query))
     embedder = Embedder()
     embeddings = embedder.encode([text for _, text in views], is_query=True)
     merged = {}

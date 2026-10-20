@@ -5,11 +5,13 @@ import logging
 import os
 import threading
 import uuid
+import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, send_from_directory, session
 
-from .config import MAX_UPLOAD_BYTES, SECRET_KEY
+from .config import MAX_UPLOAD_BYTES, SECRET_KEY, DATA_DIR
 from .ingest import ingest_file, list_documents
 from .models import Generator
 from .router import build_context, route_query
@@ -23,6 +25,9 @@ LOG_REQUESTS = os.getenv("LOG_REQUESTS", "0") == "1"
 LOG_RESPONSE_BODY = os.getenv("LOG_RESPONSE_BODY", "0") == "1"
 UPLOAD_JOBS: dict[str, dict] = {}
 UPLOAD_JOBS_LOCK = threading.Lock()
+CONVERSATIONS_FILE = DATA_DIR / "conversations.json"
+CONVERSATIONS_LOCK = threading.Lock()
+MAX_HISTORY_MESSAGES = 20
 
 @app.before_request
 def log_incoming_request():
@@ -75,6 +80,34 @@ def _run_upload_job(job_id: str, files: list[tuple[Path, str]]) -> None:
             path.unlink(missing_ok=True)
     _update_upload_job(job_id, progress=100, stage="Completed", status="complete", indexed=indexed, errors=errors)
 
+def _load_conversations() -> dict:
+    if not CONVERSATIONS_FILE.exists():
+        return {}
+    try:
+        return json.loads(CONVERSATIONS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+def _save_conversations(conversations: dict) -> None:
+    temporary = CONVERSATIONS_FILE.with_suffix(".tmp")
+    temporary.write_text(json.dumps(conversations, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary.replace(CONVERSATIONS_FILE)
+
+def _conversation(conversation_id: str) -> dict:
+    conversations = _load_conversations()
+    conversation = conversations.setdefault(conversation_id, {"conversation_id": conversation_id, "messages": [], "updated_at": None})
+    return conversation
+
+def _append_messages(conversation_id: str, messages: list[dict]) -> dict:
+    with CONVERSATIONS_LOCK:
+        conversations = _load_conversations()
+        conversation = conversations.setdefault(conversation_id, {"conversation_id": conversation_id, "messages": [], "updated_at": None})
+        conversation["messages"].extend(messages)
+        conversation["messages"] = conversation["messages"][-MAX_HISTORY_MESSAGES:]
+        conversation["updated_at"] = datetime.now(timezone.utc).isoformat()
+        _save_conversations(conversations)
+        return conversation
+
 @app.context_processor
 def inject_csrf():
     return {"csrf_token": csrf_token(), "style_version": STYLE_VERSION}
@@ -96,6 +129,12 @@ def style_asset():
 @app.get("/api/documents")
 def documents():
     return jsonify({"documents": list_documents()})
+
+@app.get("/api/conversations/<conversation_id>")
+def get_conversation(conversation_id: str):
+    if not conversation_id or len(conversation_id) > 100:
+        return jsonify({"error": "Invalid conversation ID"}), 400
+    return jsonify(_conversation(conversation_id))
 
 @app.post("/api/upload")
 def upload():
@@ -135,11 +174,22 @@ def chat():
     query = str(payload.get("query", "")).strip()
     if not query:
         return jsonify({"error": "Query cannot be empty"}), 400
+    conversation_id = str(payload.get("conversation_id", "")).strip() or uuid.uuid4().hex
+    with CONVERSATIONS_LOCK:
+        conversation = _conversation(conversation_id)
+    history = [message for message in conversation.get("messages", []) if message.get("role") in ("user", "assistant")][-MAX_HISTORY_MESSAGES:]
     try:
-        routed = route_query(query)
+        retrieval_query = "\n".join(f"{message['role']}: {message['content']}" for message in history[-6:] + [{"role": "user", "content": query}])
+        routed = route_query(query, retrieval_query=retrieval_query)
         context = build_context(routed["results"])
-        answer = generator.answer(query, context, routed["matrix_language"], routed["cmi"])
-        return jsonify({**routed, "answer": answer})
+        answer = generator.answer(query, context, routed["matrix_language"], routed["cmi"], history=history, citations=routed["results"])
+        citations = [{"filename": result["filename"], "chunk_id": result["chunk_id"], "score": result.get("score")} for result in routed["results"]]
+        if citations:
+            citation_text = "Sources: " + ", ".join(f"[{citation['filename']} · chunk {citation['chunk_id']}]" for citation in citations)
+            if "Sources:" not in answer:
+                answer = f"{answer.rstrip()}\n\n{citation_text}"
+        _append_messages(conversation_id, [{"role": "user", "content": query}, {"role": "assistant", "content": answer, "citations": citations}])
+        return jsonify({**routed, "answer": answer, "conversation_id": conversation_id, "history": _conversation(conversation_id)["messages"], "citations": citations})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 

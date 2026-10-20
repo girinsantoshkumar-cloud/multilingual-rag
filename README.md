@@ -253,6 +253,25 @@ python evaluate.py --testset tests/fixtures/sample_dataset.json --output results
 python -m pytest -q
 ```
 
+## Context-aware chat and source citations
+
+Chat conversations are persisted in `data/conversations.json` during the Kaggle session. The Chat page stores the active conversation ID in browser local storage, so moving between Upload and Chat, refreshing the page, or opening Chat again restores the previous messages.
+
+Each new question uses recent conversation history in two places:
+
+- Ollama receives the recent user and assistant turns, so personal facts such as `My name is John` remain available in follow-up questions.
+- Retrieval receives a history-expanded query, so follow-ups such as `What about international purchases?` retain the subject of the earlier exchange.
+
+Grounded answers include source references in the response using this format:
+
+```text
+[policy.pdf · chunk 3]
+```
+
+The Chat UI also renders source chips directly below each assistant response, showing the filename and chunk used for retrieval. The backend response includes a `citations` array for clients that want to render their own citation interface.
+
+Conversation storage is local to the current Kaggle session. Kaggle session termination removes the runtime files unless you copy `data/conversations.json` to persistent storage.
+
 ## Configuration
 
 | Variable | Default | Purpose |

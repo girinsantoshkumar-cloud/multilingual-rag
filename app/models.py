@@ -50,14 +50,18 @@ class Generator:
         self.ollama_base_url = OLLAMA_BASE_URL.rstrip("/")
         self.model_name = OLLAMA_MODEL
 
-    def answer(self, query: str, context: str, matrix_language: str, cmi: float) -> str:
-        prompt = ("Answer only from the supplied context. Mirror the user's language mix and be concise. "
-                  f"Matrix language: {matrix_language}; CMI: {cmi:.2f}.\n\nContext:\n{context}\n\nQuestion: {query}")
+    def answer(self, query: str, context: str, matrix_language: str, cmi: float, history: Sequence[dict] | None = None, citations: Sequence[dict] | None = None) -> str:
+        history_text = "\n".join(f"{message.get('role', 'user').title()}: {message.get('content', '')}" for message in (history or [])[-12:])
+        citation_instruction = "Cite supporting passages inline using the exact format [filename · chunk N]. End with a Sources line containing every source used. Do not invent filenames or chunks."
+        prompt = ("Answer only from the supplied context when discussing indexed documents. Use the conversation history for personal facts and follow-up references. "
+                  "Mirror the user's language mix and be concise. "
+                  f"Matrix language: {matrix_language}; CMI: {cmi:.2f}. {citation_instruction}\n\n"
+                  f"Conversation history:\n{history_text or '(no previous messages)'}\n\nContext:\n{context or '(no matching document context)'}\n\nQuestion: {query}")
         try:
             payload = json.dumps({
                 "model": self.model_name,
                 "messages": [
-                    {"role": "system", "content": "You are a grounded multilingual code-switching RAG assistant."},
+                    {"role": "system", "content": "You are a grounded multilingual code-switching conversational RAG assistant. Never claim a document fact without citing its supplied source."},
                     {"role": "user", "content": prompt},
                 ],
                 "stream": False,
