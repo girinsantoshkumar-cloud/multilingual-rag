@@ -139,3 +139,71 @@ Uploads are size-limited, extension/signature checked, path-sanitized, stored un
 ```bash
 .venv/bin/python -m pytest -q
 ```
+
+## Docker deployment
+
+Docker Compose is the easiest Linux deployment path. Install Docker Engine and the Compose plugin, then run:
+
+```bash
+git clone https://github.com/kamalesh-codes/multilingual-rag.git
+cd multilingual-rag
+docker compose up --build
+```
+
+The service will be available at `http://127.0.0.1:5000`. The first image build installs the Python dependencies; the first request that uses embeddings may also download the configured multilingual embedding model.
+
+Run it in the background:
+
+```bash
+docker compose up --build -d
+docker compose ps
+docker compose logs -f multilingual-rag
+```
+
+Stop the service without deleting uploaded documents:
+
+```bash
+docker compose down
+```
+
+Uploaded documents, chunks, vector data, and evaluation results persist in the repository's `data/` and `results/` directories through bind mounts. On Linux, Compose defaults to UID/GID `1000:1000`; if your host user uses another ID, set it before starting:
+
+```bash
+DOCKER_UID="$(id -u)" DOCKER_GID="$(id -g)" docker compose up --build -d
+```
+
+Set a real secret before exposing the service beyond localhost:
+
+```bash
+export FLASK_SECRET_KEY="$(openssl rand -hex 32)"
+export PORT=8000
+docker compose up --build -d
+```
+
+The Compose service has an HTTP health check at `/health` and restarts automatically unless stopped. To rebuild after changing dependencies or source code:
+
+```bash
+docker compose build --no-cache
+docker compose up -d
+```
+
+### Docker without Compose
+
+If the Compose plugin is unavailable, the same image can be run directly:
+
+```bash
+docker build -t multilingual-rag:local .
+docker run --rm -it \
+  -p 5000:5000 \
+  -e FLASK_SECRET_KEY="change-this-in-production" \
+  -v "$(pwd)/data:/app/data" \
+  -v "$(pwd)/results:/app/results" \
+  multilingual-rag:local
+```
+
+If the container cannot write to the bind-mounted directories, use the host UID/GID with Compose or prepare the directories with matching ownership:
+
+```bash
+mkdir -p data/raw_docs data/chunks data/vector_db results
+sudo chown -R "$(id -u):$(id -g)" data results
+```
