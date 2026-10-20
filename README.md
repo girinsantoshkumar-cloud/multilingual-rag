@@ -1,6 +1,15 @@
-# Code-Switching RAG
+# Multilingual Code-Switching RAG
 
-An end-to-end Hindi-English code-switching Retrieval-Augmented Generation chatbot. It provides a document upload page, persistent local vector retrieval, CMI-based query routing, transliteration-aware multi-view retrieval, grounded answer generation, CLI commands, and evaluation metrics.
+An end-to-end multilingual code-switching Retrieval-Augmented Generation chatbot with Hindi-English and Tamil-English support. It provides a document upload page, persistent local vector retrieval, CMI-based query routing, transliteration-aware multi-view retrieval, grounded answer generation, CLI commands, and evaluation metrics.
+
+## Supported code-switching pairs
+
+The current language-aware baseline supports:
+
+- **Hindi-English:** Devanagari and common Roman Hindi queries such as `mera refund kab aayega?`.
+- **Tamil-English:** Tamil script and common Roman Tamil queries such as `என் refund எப்போது வரும்?` or `enakku refund eppo varum?`.
+
+Documents and multilingual embeddings remain language-independent. Other languages can still use the general retrieval path, but they do not yet have pair-specific CMI or transliteration rules.
 
 ## Fastest Linux setup
 

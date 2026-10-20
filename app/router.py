@@ -3,17 +3,18 @@ from __future__ import annotations
 from .config import CMI_THRESHOLD, TOP_K
 from .ingest import search
 from .models import Embedder
-from .utils import compute_cmi, language_profile, transliterate_roman_hindi
+from .utils import compute_cmi, language_profile, transliterate_roman_hindi, transliterate_roman_tamil
 
 def query_views(query: str, matrix: str, cmi: float) -> list[tuple[str, str]]:
     views = [("surface", query)]
+    transliterator = transliterate_roman_tamil if matrix == "ta" else transliterate_roman_hindi
     if cmi >= CMI_THRESHOLD or any(ord(c) < 128 for c in query):
-        native = transliterate_roman_hindi(query)
+        native = transliterator(query)
         if native != query:
             views.append(("native-script", native))
     if cmi >= CMI_THRESHOLD:
         # Offline-safe canonical/pivot views. Translation models can be plugged in later.
-        views.append(("matrix-canonical", query if matrix == "en" else transliterate_roman_hindi(query)))
+        views.append(("matrix-canonical", query if matrix == "en" else transliterator(query)))
         views.append(("english-pivot", query))
     return views[:4]
 

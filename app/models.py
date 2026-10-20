@@ -53,7 +53,7 @@ class Generator:
     def answer(self, query: str, context: str, matrix_language: str, cmi: float) -> str:
         if self.client:
             try:
-                prompt = ("Answer only from the supplied context. Mirror the user's Hindi-English mix and be concise. "
+                prompt = ("Answer only from the supplied context. Mirror the user's language mix and be concise. "
                           f"Matrix language: {matrix_language}; CMI: {cmi:.2f}.\n\nContext:\n{context}\n\nQuestion: {query}")
                 response = self.client.chat.completions.create(
                     model=self.model_name,
@@ -73,6 +73,10 @@ class Generator:
         lead = passages[0]
         if lead.startswith("[") and "] " in lead:
             lead = lead.split("] ", 1)[1]
-        if matrix_language == "hi" or cmi >= 0.2:
+        if matrix_language == "hi":
             return f"Available documents ke according: {lead}"
+        if matrix_language == "ta":
+            return f"Indexed documents படி: {lead}"
+        if cmi >= 0.2:
+            return f"According to the indexed documents: {lead}"
         return f"According to the indexed documents: {lead}"

@@ -5,7 +5,7 @@ import pytest
 
 from app.ingest import chunk_text
 from app.router import query_views
-from app.utils import compute_cmi, safe_filename, transliterate_roman_hindi
+from app.utils import compute_cmi, language_profile, safe_filename, transliterate_roman_hindi, transliterate_roman_tamil
 
 
 def test_cmi_mixed_query_is_nonzero():
@@ -25,6 +25,17 @@ def test_safe_filename_blocks_paths():
 def test_mixed_query_has_fanout_views():
     views = query_views('मेरा refund कब आएगा', 'hi', compute_cmi('मेरा refund कब आएगा'))
     assert len(views) >= 3
+
+def test_tamil_script_is_detected_as_matrix_language():
+    profile = language_profile('என் refund எப்போது வரும்?')
+    assert profile['matrix_language'] == 'ta'
+    assert compute_cmi('என் refund எப்போது வரும்?') > 0
+
+def test_roman_tamil_gets_native_script_view():
+    query = 'enakku refund eppo varum?'
+    assert 'எனக்கு' in transliterate_roman_tamil(query)
+    views = query_views(query, 'ta', compute_cmi(query))
+    assert any(name == 'native-script' and 'எனக்கு' in text for name, text in views)
 
 def test_web_health_and_chat(tmp_path, monkeypatch):
     from app.web import app
