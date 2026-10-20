@@ -41,8 +41,10 @@ def log_incoming_request():
 def log_outgoing_response(response):
     if LOG_REQUESTS:
         body = ""
-        if LOG_RESPONSE_BODY:
+        if LOG_RESPONSE_BODY and not response.direct_passthrough:
             body = f" body={response.get_data(as_text=True)[:2000]!r}"
+        elif LOG_RESPONSE_BODY and response.direct_passthrough:
+            body = " body=<streamed response>"
         app.logger.info("OUT %s %s status=%s%s", request.method, request.path, response.status_code, body)
     return response
 
